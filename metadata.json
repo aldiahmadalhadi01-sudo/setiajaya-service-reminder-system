@@ -1,0 +1,6 @@
+{
+  "name": "Toyota Setiajaya Service Analytics & Reminder System",
+  "description": "Enterprise Toyota Setiajaya service activity analytics, periodic reminder system, vehicle history tracking, and Google Spreadsheet/Apps Script sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
