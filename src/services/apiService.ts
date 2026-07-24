@@ -2,39 +2,57 @@ import { DECRecord, ServiceCallRecord, DashboardKPI, TrendDataPoint, DealerDistD
 
 const API_BASE = '/api';
 
+async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+    
+    if (!contentType.includes('application/json')) {
+      const text = await res.text();
+      console.warn(`[API] Expected JSON from ${url}, got:`, text.slice(0, 100));
+      throw new Error(`Server API response was not JSON (HTTP ${res.status})`);
+    }
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `HTTP error ${res.status}`);
+    }
+    return data as T;
+  } catch (err: any) {
+    console.error(`[API Error - ${url}]:`, err);
+    throw err;
+  }
+}
+
 export const apiService = {
   /**
    * Get Server Health & Status
    */
   async getHealth() {
-    const res = await fetch(`${API_BASE}/health`);
-    return await res.json();
+    return await fetchJson<{ status: string; system: string; isLiveMode: boolean }>(`${API_BASE}/health`);
   },
 
   /**
    * Get / Update Settings
    */
   async getConfig(): Promise<{ success: boolean; config: GasConfig }> {
-    const res = await fetch(`${API_BASE}/config`);
-    return await res.json();
+    return await fetchJson<{ success: boolean; config: GasConfig }>(`${API_BASE}/config`);
   },
 
   async updateConfig(config: Partial<GasConfig>): Promise<{ success: boolean; config: GasConfig }> {
-    const res = await fetch(`${API_BASE}/config`, {
+    return await fetchJson<{ success: boolean; config: GasConfig }>(`${API_BASE}/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config)
     });
-    return await res.json();
   },
 
   async testGasUrl(webAppUrl: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/config/test`, {
+    return await fetchJson<{ success: boolean; message: string }>(`${API_BASE}/config/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ webAppUrl })
     });
-    return await res.json();
   },
 
   /**
@@ -57,16 +75,14 @@ export const apiService = {
     if (month) query.set('month', month);
     if (year) query.set('year', year);
 
-    const res = await fetch(`${API_BASE}/dashboard?${query.toString()}`);
-    return await res.json();
+    return await fetchJson(`${API_BASE}/dashboard?${query.toString()}`);
   },
 
   /**
    * Realtime Reminders
    */
   async getReminders(): Promise<{ success: boolean; count: number; data: ReminderItem[] }> {
-    const res = await fetch(`${API_BASE}/reminders`);
-    return await res.json();
+    return await fetchJson<{ success: boolean; count: number; data: ReminderItem[] }>(`${API_BASE}/reminders`);
   },
 
   /**
@@ -83,8 +99,7 @@ export const apiService = {
     if (searchParams?.month) query.set('month', searchParams.month);
     if (searchParams?.year) query.set('year', searchParams.year);
 
-    const res = await fetch(`${API_BASE}/history?${query.toString()}`);
-    return await res.json();
+    return await fetchJson(`${API_BASE}/history?${query.toString()}`);
   },
 
   /**
@@ -92,42 +107,37 @@ export const apiService = {
    */
   async getDECList(search?: string): Promise<{ success: boolean; count: number; data: DECRecord[] }> {
     const query = search ? `?search=${encodeURIComponent(search)}` : '';
-    const res = await fetch(`${API_BASE}/dec${query}`);
-    return await res.json();
+    return await fetchJson<{ success: boolean; count: number; data: DECRecord[] }>(`${API_BASE}/dec${query}`);
   },
 
   async createDEC(record: Omit<DECRecord, 'id'>): Promise<{ success: boolean; message: string; data?: DECRecord }> {
-    const res = await fetch(`${API_BASE}/dec`, {
+    return await fetchJson<{ success: boolean; message: string; data?: DECRecord }>(`${API_BASE}/dec`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
     });
-    return await res.json();
   },
 
   async updateDEC(id: string, record: Partial<DECRecord>): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/dec/${encodeURIComponent(id)}`, {
+    return await fetchJson<{ success: boolean; message: string }>(`${API_BASE}/dec/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
     });
-    return await res.json();
   },
 
   async deleteDEC(id: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/dec/${encodeURIComponent(id)}`, {
+    return await fetchJson<{ success: boolean; message: string }>(`${API_BASE}/dec/${encodeURIComponent(id)}`, {
       method: 'DELETE'
     });
-    return await res.json();
   },
 
   async batchImportDEC(items: DECRecord[]): Promise<{ success: boolean; summary: ImportSummaryResult }> {
-    const res = await fetch(`${API_BASE}/import/dec`, {
+    return await fetchJson<{ success: boolean; summary: ImportSummaryResult }>(`${API_BASE}/import/dec`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items })
     });
-    return await res.json();
   },
 
   /**
@@ -135,44 +145,39 @@ export const apiService = {
    */
   async getServiceCallList(search?: string): Promise<{ success: boolean; count: number; data: ServiceCallRecord[] }> {
     const query = search ? `?search=${encodeURIComponent(search)}` : '';
-    const res = await fetch(`${API_BASE}/service-call${query}`);
-    return await res.json();
+    return await fetchJson<{ success: boolean; count: number; data: ServiceCallRecord[] }>(`${API_BASE}/service-call${query}`);
   },
 
   async createServiceCall(record: Omit<ServiceCallRecord, 'id'>): Promise<{ success: boolean; message: string; data?: ServiceCallRecord }> {
-    const res = await fetch(`${API_BASE}/service-call`, {
+    return await fetchJson<{ success: boolean; message: string; data?: ServiceCallRecord }>(`${API_BASE}/service-call`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
     });
-    return await res.json();
   },
 
   async updateServiceCall(id: string, record: Partial<ServiceCallRecord>): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/service-call/${encodeURIComponent(id)}`, {
+    return await fetchJson<{ success: boolean; message: string }>(`${API_BASE}/service-call/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
     });
-    return await res.json();
   },
 
   async deleteServiceCall(id: string): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/service-call/${encodeURIComponent(id)}`, {
+    return await fetchJson<{ success: boolean; message: string }>(`${API_BASE}/service-call/${encodeURIComponent(id)}`, {
       method: 'DELETE'
     });
-    return await res.json();
   },
 
   async batchImportServiceCall(
     items: ServiceCallRecord[],
     duplicateMode: 'skip' | 'replace' | 'all' = 'skip'
   ): Promise<{ success: boolean; summary: ImportSummaryResult }> {
-    const res = await fetch(`${API_BASE}/import/service-call`, {
+    return await fetchJson<{ success: boolean; summary: ImportSummaryResult }>(`${API_BASE}/import/service-call`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items, duplicateMode })
     });
-    return await res.json();
   }
 };

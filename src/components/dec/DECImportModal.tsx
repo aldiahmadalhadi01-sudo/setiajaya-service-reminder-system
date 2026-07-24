@@ -83,10 +83,20 @@ export const DECImportModal: React.FC<DECImportModalProps> = ({
   const autoMapHeaders = (fileHeaders: string[]) => {
     const mapping: Record<string, string> = {};
     decTargetFields.forEach((tf) => {
-      const match = fileHeaders.find(
-        (fh) => fh.toLowerCase().replace(/[\s_]+/g, '') === tf.key.toLowerCase().replace(/[\s_]+/g, '') ||
-                fh.toLowerCase().includes(tf.label.toLowerCase())
-      );
+      const match = fileHeaders.find((fh) => {
+        const cleanFh = fh.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanKey = tf.key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cleanLabel = tf.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        if (cleanFh === cleanKey || cleanFh === cleanLabel) return true;
+        if (tf.key === 'vin' && (cleanFh.includes('rangka') || cleanFh.includes('vin') || cleanFh.includes('chassis') || cleanFh.includes('frame'))) return true;
+        if (tf.key === 'nama_customer' && (cleanFh.includes('customer') || cleanFh.includes('nama') || cleanFh.includes('pelanggan') || cleanFh.includes('cust'))) return true;
+        if (tf.key === 'phone_customer' && (cleanFh.includes('phone') || cleanFh.includes('hp') || cleanFh.includes('wa') || cleanFh.includes('telp') || cleanFh.includes('kontak'))) return true;
+        if (tf.key === 'tanggal_dec' && (cleanFh.includes('tanggal') || cleanFh.includes('tgl') || cleanFh.includes('date'))) return true;
+        if (tf.key === 'sales' && (cleanFh.includes('sales') || cleanFh.includes('salesman') || cleanFh.includes('person'))) return true;
+        if (tf.key === 'model' && (cleanFh.includes('model') || cleanFh.includes('tipe') || cleanFh.includes('kendaraan') || cleanFh.includes('unit'))) return true;
+        return cleanFh.includes(cleanKey);
+      });
       mapping[tf.key] = match || '';
     });
     setHeaderMapping(mapping);
@@ -105,10 +115,18 @@ export const DECImportModal: React.FC<DECImportModalProps> = ({
       const mappedRows = excelService.mapHeaders(parsedResult.data, headerMapping) as DECRecord[];
       
       const summary = await onImportSuccess(mappedRows);
-      setImportSummary(summary);
-      toast.success(`Berhasil mengimpor ${summary.success} data DEC!`);
-    } catch (err) {
-      toast.error('Gagal memproses batch import DEC');
+      if (summary) {
+        setImportSummary(summary);
+        if (summary.success > 0) {
+          toast.success(`Berhasil mengimpor ${summary.success} data DEC!`);
+        } else {
+          toast.error(`Import selesai tetapi 0 data berhasil. Alasan: ${summary.errors[0]?.reason || 'VIN tidak ditemukan'}`);
+        }
+      } else {
+        toast.error('Gagal memproses batch import: respon server kosong');
+      }
+    } catch (err: any) {
+      toast.error(`Gagal memproses batch import DEC: ${err.message || 'Error server/koneksi'}`);
     } finally {
       setIsImporting(false);
     }

@@ -383,51 +383,75 @@ async function startServer() {
 
   // BATCH IMPORT DEC
   app.post('/api/import/dec', async (req: Request, res: Response) => {
-    const items: DECRecord[] = req.body.items || [];
-    if (!Array.isArray(items) || items.length === 0) {
-      res.status(400).json({ success: false, message: 'Payload items kosong' });
-      return;
-    }
-
-    if (gasConfig.isLive && gasConfig.webAppUrl) {
-      await callGAS('batchImportDEC', { items }, 'POST');
-    }
-
-    const result: ImportSummaryResult = {
-      total: items.length,
-      success: 0,
-      failed: 0,
-      duplicates: 0,
-      errors: []
-    };
-
-    items.forEach((item, idx) => {
-      if (!item.vin || !String(item.vin).trim()) {
-        result.failed++;
-        result.errors.push({ row: idx + 1, reason: 'VIN tidak boleh kosong', data: item });
+    try {
+      const items: DECRecord[] = req.body.items || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ success: false, message: 'Payload items kosong atau format tidak sesuai' });
         return;
       }
 
-      const cleanVin = String(item.vin).trim().toUpperCase();
-      const newRecord: DECRecord = {
-        id: `dec-${Date.now()}-${idx}`,
-        bulan: item.bulan || 'Januari',
-        tanggal_dec: normalizeDateToISO(item.tanggal_dec),
-        nama_customer: item.nama_customer || '',
-        payment: item.payment || 'Cash',
-        phone_customer: String(item.phone_customer || ''),
-        model: item.model || '',
-        vin: cleanVin,
-        sales: item.sales || '',
-        alamat: item.alamat || '',
-        kota: item.kota || ''
+      if (gasConfig.isLive && gasConfig.webAppUrl) {
+        try {
+          await callGAS('batchImportDEC', { items }, 'POST');
+        } catch (gasErr) {
+          console.warn('[Sync Batch Import DEC to GAS Warning]:', gasErr);
+        }
+      }
+
+      const result: ImportSummaryResult = {
+        total: items.length,
+        success: 0,
+        failed: 0,
+        duplicates: 0,
+        errors: []
       };
 
-      decDatabase.push(newRecord);
-      result.success++;
-    });
+      const extractVin = (item: any): string => {
+        if (item.vin && String(item.vin).trim()) return String(item.vin).trim().toUpperCase();
+        for (const k of Object.keys(item)) {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanK.includes('rangka') || cleanK.includes('chassis') || cleanK.includes('vin') || cleanK.includes('frame')) {
+            const val = String(item[k] || '').trim();
+            if (val && val !== '-' && val !== 'undefined' && val !== 'null') return val.toUpperCase();
+          }
+        }
+        return '';
+      };
 
-    res.json({ success: true, summary: result });
+      items.forEach((item, idx) => {
+        const cleanVin = extractVin(item);
+        if (!cleanVin) {
+          result.failed++;
+          result.errors.push({ row: idx + 1, reason: 'VIN (Nomor Rangka) tidak boleh kosong atau tidak ditemukan', data: item });
+          return;
+        }
+
+        const newRecord: DECRecord = {
+          id: `dec-${Date.now()}-${idx}`,
+          bulan: item.bulan || 'Januari',
+          tanggal_dec: normalizeDateToISO(item.tanggal_dec),
+          nama_customer: item.nama_customer || '',
+          payment: item.payment || 'Cash',
+          phone_customer: String(item.phone_customer || ''),
+          model: item.model || '',
+          vin: cleanVin,
+          sales: item.sales || '',
+          alamat: item.alamat || '',
+          kota: item.kota || ''
+        };
+
+        decDatabase.push(newRecord);
+        result.success++;
+      });
+
+      res.json({ success: true, summary: result });
+    } catch (err: any) {
+      console.error('[Batch Import DEC Server Error]:', err);
+      res.status(500).json({
+        success: false,
+        message: `Gagal memproses import DEC: ${err.message || 'Server error'}`
+      });
+    }
   });
 
   // SERVICE CALL CRUD ENDPOINTS
@@ -607,35 +631,52 @@ async function startServer() {
 
   // BATCH IMPORT SERVICE CALL WITH DUPLICATE HANDLING
   app.post('/api/import/service-call', async (req: Request, res: Response) => {
-    const items: ServiceCallRecord[] = req.body.items || [];
-    const duplicateMode: 'skip' | 'replace' | 'all' = req.body.duplicateMode || 'skip';
+    try {
+      const items: ServiceCallRecord[] = req.body.items || [];
+      const duplicateMode: 'skip' | 'replace' | 'all' = req.body.duplicateMode || 'skip';
 
-    if (!Array.isArray(items) || items.length === 0) {
-      res.status(400).json({ success: false, message: 'Payload items kosong' });
-      return;
-    }
-
-    if (gasConfig.isLive && gasConfig.webAppUrl) {
-      await callGAS('batchImportServiceCall', { items, duplicateMode }, 'POST');
-    }
-
-    const result: ImportSummaryResult = {
-      total: items.length,
-      success: 0,
-      failed: 0,
-      duplicates: 0,
-      errors: []
-    };
-
-    items.forEach((item, idx) => {
-      const cleanVin = (item.vin || '').toString().trim().toUpperCase();
-      const cleanInvoice = (item.no_invoice || '').toString().trim();
-
-      if (!cleanVin) {
-        result.failed++;
-        result.errors.push({ row: idx + 1, reason: 'VIN wajib diisi', data: item });
+      if (!Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ success: false, message: 'Payload items kosong' });
         return;
       }
+
+      if (gasConfig.isLive && gasConfig.webAppUrl) {
+        try {
+          await callGAS('batchImportServiceCall', { items, duplicateMode }, 'POST');
+        } catch (gasErr) {
+          console.warn('[Sync Batch Import Service Call GAS Warning]:', gasErr);
+        }
+      }
+
+      const result: ImportSummaryResult = {
+        total: items.length,
+        success: 0,
+        failed: 0,
+        duplicates: 0,
+        errors: []
+      };
+
+      const extractVin = (item: any): string => {
+        if (item.vin && String(item.vin).trim()) return String(item.vin).trim().toUpperCase();
+        for (const k of Object.keys(item)) {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanK.includes('rangka') || cleanK.includes('chassis') || cleanK.includes('vin') || cleanK.includes('frame')) {
+            const val = String(item[k] || '').trim();
+            if (val && val !== '-' && val !== 'undefined' && val !== 'null') return val.toUpperCase();
+          }
+        }
+        return '';
+      };
+
+      items.forEach((item, idx) => {
+        const cleanVin = extractVin(item);
+        const cleanInvoice = (item.no_invoice || '').toString().trim();
+
+        if (!cleanVin) {
+          result.failed++;
+          result.errors.push({ row: idx + 1, reason: 'VIN (Nomor Rangka) wajib diisi', data: item });
+          return;
+        }
 
       // Check duplicate
       const existingIdx = serviceCallDatabase.findIndex(
@@ -712,6 +753,13 @@ async function startServer() {
     });
 
     res.json({ success: true, summary: result });
+    } catch (err: any) {
+      console.error('[Batch Import Service Call Server Error]:', err);
+      res.status(500).json({
+        success: false,
+        message: `Gagal memproses import Service Call: ${err.message || 'Server error'}`
+      });
+    }
   });
 
   // DASHBOARD ANALYTICS ENDPOINT
