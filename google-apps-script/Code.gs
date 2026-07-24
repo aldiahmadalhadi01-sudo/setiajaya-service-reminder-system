@@ -40,7 +40,10 @@ function handleRequest(e) {
     }
 
     const action = params.action || postData.action || 'getDashboard';
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    let spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (!spreadsheet) {
+      spreadsheet = SpreadsheetApp.openById('1TAryGER_qTCumZ0xza-WGm3StAQSTepK5SlXOItz8ZU');
+    }
 
     let result = { success: false, message: 'Invalid action' };
 
