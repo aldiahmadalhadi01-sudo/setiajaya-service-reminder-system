@@ -44,23 +44,70 @@ export function normalizeDateToISO(dateInput: any): string {
   }
 
   const str = String(dateInput).trim();
-  
-  // DD/MM/YYYY or DD-MM-YYYY
-  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(str)) {
-    const parts = str.split(/[\/\-]/);
+  if (!str || str === '-' || str === 'undefined' || str === 'null') {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+
+  // Excel Serial Number (e.g. 44562 or 45123.5)
+  if (/^\d{5}(\.\d+)?$/.test(str)) {
+    const serial = parseFloat(str);
+    if (serial > 20000 && serial < 60000) {
+      const utc_days = Math.floor(serial - 25569);
+      const utc_value = utc_days * 86400;
+      const date_info = new Date(utc_value * 1000);
+      if (!isNaN(date_info.getTime())) {
+        return date_info.toISOString().split('T')[0];
+      }
+    }
+  }
+
+  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}$/.test(str)) {
+    const parts = str.split(/[\/\-\.]/);
     const day = parts[0].padStart(2, '0');
     const month = parts[1].padStart(2, '0');
     const year = parts[2];
     return `${year}-${month}-${day}`;
   }
 
-  // YYYY/MM/DD
-  if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(str)) {
-    const parts = str.split(/[\/\-]/);
+  // YYYY/MM/DD, YYYY.MM.DD
+  if (/^\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}$/.test(str)) {
+    const parts = str.split(/[\/\-\.]/);
     const year = parts[0];
     const month = parts[1].padStart(2, '0');
     const day = parts[2].padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  // Handle Indonesian Month Names (e.g., 15 Juli 2026, 15-Jul-2026)
+  const indoMonths: Record<string, string> = {
+    jan: '01', januari: '01',
+    feb: '02', februari: '02',
+    mar: '03', maret: '03',
+    apr: '04', april: '04',
+    mei: '05',
+    jun: '06', juni: '06',
+    jul: '07', juli: '07',
+    agt: '08', agustus: '08', aug: '08',
+    sep: '09', september: '09',
+    okt: '10', oktober: '10', oct: '10',
+    nov: '11', november: '11',
+    des: '12', desember: '12', dec: '12'
+  };
+
+  const textMatch = str.match(/^(\d{1,2})[\s\/\-\.]([a-zA-Z]+)[\s\/\-\.](\d{4})$/);
+  if (textMatch) {
+    const day = textMatch[1].padStart(2, '0');
+    const mStr = textMatch[2].toLowerCase();
+    const year = textMatch[3];
+    if (indoMonths[mStr]) {
+      return `${year}-${indoMonths[mStr]}-${day}`;
+    }
   }
 
   const parsed = new Date(str);

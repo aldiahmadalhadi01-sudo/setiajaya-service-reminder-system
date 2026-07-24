@@ -1,4 +1,5 @@
 import { DECRecord, ServiceCallRecord, DashboardKPI, TrendDataPoint, DealerDistData, RingAreaData, LeaderboardSAItem, ReminderItem, UnitVehicleSummary, ImportSummaryResult, GasConfig } from '../types';
+import { normalizeDateToISO } from '../lib/dateUtils';
 
 const API_BASE = '/api';
 
@@ -41,15 +42,6 @@ function extractVin(item: any): string {
     }
   }
   return '';
-}
-
-function normalizeDateToISO(val: any): string {
-  if (!val) return new Date().toISOString().slice(0, 10);
-  const str = String(val).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
-  const dateObj = new Date(str);
-  if (!isNaN(dateObj.getTime())) return dateObj.toISOString().slice(0, 10);
-  return new Date().toISOString().slice(0, 10);
 }
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {

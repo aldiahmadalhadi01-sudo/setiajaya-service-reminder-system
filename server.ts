@@ -1,12 +1,15 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_DEC_RECORDS, INITIAL_SERVICE_CALL_RECORDS } from './src/data/mockData';
 import { DECRecord, ServiceCallRecord, DashboardKPI, TrendDataPoint, DealerDistData, RingAreaData, LeaderboardSAItem, ImportSummaryResult } from './src/types';
 import { calculateReminders } from './src/lib/reminderUtils';
 import { normalizeDateToISO } from './src/lib/dateUtils';
 
-// In-Memory Database State for fallback/demo mode
+// Persistent Database State
+const DB_FILE_PATH = path.join(process.cwd(), 'app_database.json');
+
 let decDatabase: DECRecord[] = [...INITIAL_DEC_RECORDS];
 let serviceCallDatabase: ServiceCallRecord[] = [...INITIAL_SERVICE_CALL_RECORDS];
 
@@ -18,6 +21,136 @@ let gasConfig = {
   apiKey: process.env.GAS_API_KEY || 'TOYOTA_SETIAJAYA_SECRET_KEY',
   isLive: true
 };
+
+function saveDatabaseToFile() {
+  try {
+    const data = {
+      decDatabase,
+      serviceCallDatabase,
+      gasConfig
+    };
+    fs.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[DB Storage] Error writing database file:', err);
+  }
+}
+
+function loadDatabaseFromFile() {
+  try {
+    if (fs.existsSync(DB_FILE_PATH)) {
+      const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.decDatabase) && parsed.decDatabase.length > 0) {
+        decDatabase = parsed.decDatabase;
+      }
+      if (Array.isArray(parsed.serviceCallDatabase) && parsed.serviceCallDatabase.length > 0) {
+        serviceCallDatabase = parsed.serviceCallDatabase;
+      }
+      if (parsed.gasConfig) {
+        gasConfig = { ...gasConfig, ...parsed.gasConfig };
+      }
+      console.log(`[DB Storage] Loaded ${decDatabase.length} DEC & ${serviceCallDatabase.length} Service Call records from disk.`);
+    }
+  } catch (err) {
+    console.error('[DB Storage] Error reading database file:', err);
+  }
+}
+
+// Load persisted database on boot
+loadDatabaseFromFile();
+
+function mergeDecRecords(gasRecords: any[]) {
+  if (!Array.isArray(gasRecords) || gasRecords.length === 0) return;
+  const existingVins = new Set(decDatabase.map(d => String(d.vin || '').toUpperCase().trim()).filter(Boolean));
+
+  gasRecords.forEach((r, idx) => {
+    const vin = String(r.vin || '').toUpperCase().trim();
+    if (vin && !existingVins.has(vin)) {
+      decDatabase.push({
+        id: r.id || r.vin || `dec-gas-${idx}`,
+        bulan: r.bulan || 'Januari',
+        tanggal_dec: normalizeDateToISO(r.tanggal_dec),
+        nama_customer: r.nama_customer || '',
+        payment: r.payment || 'Cash',
+        phone_customer: String(r.phone_customer || ''),
+        model: r.model || '',
+        vin,
+        sales: r.sales || '',
+        alamat: r.alamat || '',
+        kota: r.kota || ''
+      });
+      existingVins.add(vin);
+    }
+  });
+  saveDatabaseToFile();
+}
+
+function mergeServiceCallRecords(gasRecords: any[]) {
+  if (!Array.isArray(gasRecords) || gasRecords.length === 0) return;
+  const existingKeys = new Set(
+    serviceCallDatabase.map(s => `${String(s.vin || '').toUpperCase().trim()}_${String(s.no_invoice || '').trim()}`)
+  );
+
+  gasRecords.forEach((r, idx) => {
+    const vin = String(r.vin || '').toUpperCase().trim();
+    const inv = String(r.no_invoice || '').trim();
+    const key = `${vin}_${inv}`;
+
+    if (vin && !existingKeys.has(key)) {
+      serviceCallDatabase.push({
+        id: r.id || r.no_invoice || `sc-gas-${idx}`,
+        week: r.week || 'W1',
+        cabang: r.cabang || 'Toyota Setiajaya Depok',
+        service_advisor: r.service_advisor || 'Unassigned',
+        tanggal_entry: normalizeDateToISO(r.tanggal_entry),
+        call_id: r.call_id || `CALL-${idx}`,
+        kode_customer: r.kode_customer || 'CUST',
+        nama_customer: r.nama_customer || '',
+        no_hp: String(r.no_hp || ''),
+        no_wa: String(r.no_wa || r.no_hp || ''),
+        alamat: r.alamat || '',
+        kelurahan: r.kelurahan || '',
+        kecamatan: r.kecamatan || '',
+        kota: r.kota || '',
+        kode_pos: String(r.kode_pos || ''),
+        ring_area: r.ring_area || 'Ring 1',
+        tipe_kendaraan: r.tipe_kendaraan || '',
+        vin,
+        no_mesin: r.no_mesin || '',
+        no_polisi: String(r.no_polisi || '').toUpperCase().trim(),
+        tahun_rakit: Number(r.tahun_rakit) || new Date().getFullYear(),
+        tanggal_do: normalizeDateToISO(r.tanggal_do),
+        point_of_service: r.point_of_service || 'Bengkel Resmi',
+        problem_definition: r.problem_definition || 'Service Berkala',
+        estimasi_harga: Number(r.estimasi_harga) || 0,
+        no_voucher: r.no_voucher || '-',
+        km_service: Number(r.km_service) || 0,
+        jenis_pekerjaan: r.jenis_pekerjaan || 'Service Berkala',
+        tipe_promo: r.tipe_promo || '-',
+        ssc: r.ssc || 'Tidak',
+        dealer_penjual: r.dealer_penjual || 'Setiajaya Depok',
+        group: r.group || 'Setiajaya Group',
+        area_dealer: r.area_dealer || 'Jabodetabek',
+        t_Care: r.t_Care || 'Aktif',
+        up_selling: r.up_selling || '-',
+        cross_selling: r.cross_selling || '-',
+        no_so: r.no_so || `SO-${idx}`,
+        tanggal_so: normalizeDateToISO(r.tanggal_so),
+        no_invoice: r.no_invoice || `INV-${idx}`,
+        tanggal_invoice: normalizeDateToISO(r.tanggal_invoice),
+        next_service: normalizeDateToISO(r.next_service),
+        so_key: r.so_key || `SOKEY-${idx}`,
+        invoice_key: r.invoice_key || `INVKEY-${idx}`,
+        alamat_domisili: r.alamat_domisili || r.alamat || '',
+        ring_area_domisili: r.ring_area_domisili || r.ring_area || 'Ring 1',
+        nama_laporan: r.nama_laporan || 'Laporan Service Harian',
+        periode: r.periode || new Date().toISOString().slice(0, 7)
+      });
+      existingKeys.add(key);
+    }
+  });
+  saveDatabaseToFile();
+}
 
 /**
  * Helper to parse CSV data from a string
@@ -226,6 +359,7 @@ async function startServer() {
     if (webAppUrl !== undefined) gasConfig.webAppUrl = webAppUrl;
     if (apiKey !== undefined) gasConfig.apiKey = apiKey;
     if (isLive !== undefined) gasConfig.isLive = !!isLive;
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Google Apps Script config updated', config: gasConfig });
   });
 
@@ -297,19 +431,7 @@ async function startServer() {
     if (gasConfig.isLive && gasConfig.webAppUrl) {
       const gasRes = await callGAS('getDEC', { search }, 'GET');
       if (gasRes && gasRes.data && Array.isArray(gasRes.data)) {
-        decDatabase = gasRes.data.map((r: any, idx: number) => ({
-          id: r.id || r.vin || `dec-gas-${idx}`,
-          bulan: r.bulan || 'Januari',
-          tanggal_dec: normalizeDateToISO(r.tanggal_dec),
-          nama_customer: r.nama_customer || '',
-          payment: r.payment || 'Cash',
-          phone_customer: String(r.phone_customer || ''),
-          model: r.model || '',
-          vin: String(r.vin || '').toUpperCase().trim(),
-          sales: r.sales || '',
-          alamat: r.alamat || '',
-          kota: r.kota || ''
-        }));
+        mergeDecRecords(gasRes.data);
       }
     }
 
@@ -351,6 +473,7 @@ async function startServer() {
     }
 
     decDatabase.unshift(newRecord);
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Data DEC berhasil ditambahkan', data: newRecord });
   });
 
@@ -372,6 +495,7 @@ async function startServer() {
       await callGAS('saveDEC', { data: decDatabase[index] }, 'POST');
     }
 
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Data DEC berhasil diperbarui', data: decDatabase[index] });
   });
 
@@ -389,6 +513,7 @@ async function startServer() {
     }
 
     decDatabase = decDatabase.filter(r => r.id !== id && r.vin !== id);
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Data DEC berhasil dihapus' });
   });
 
@@ -455,6 +580,9 @@ async function startServer() {
         result.success++;
       });
 
+      saveDatabaseToFile();
+      res.json({ success: true, summary: result });
+
       res.json({ success: true, summary: result });
     } catch (err: any) {
       console.error('[Batch Import DEC Server Error]:', err);
@@ -472,55 +600,7 @@ async function startServer() {
     if (gasConfig.isLive && gasConfig.webAppUrl) {
       const gasRes = await callGAS('getServiceCall', { search }, 'GET');
       if (gasRes && gasRes.data && Array.isArray(gasRes.data)) {
-        serviceCallDatabase = gasRes.data.map((r: any, idx: number) => ({
-          id: r.id || r.no_invoice || `sc-gas-${idx}`,
-          week: r.week || 'W1',
-          cabang: r.cabang || 'Toyota Setiajaya Depok',
-          service_advisor: r.service_advisor || 'Unassigned',
-          tanggal_entry: normalizeDateToISO(r.tanggal_entry),
-          call_id: r.call_id || `CALL-${idx}`,
-          kode_customer: r.kode_customer || 'CUST',
-          nama_customer: r.nama_customer || '',
-          no_hp: String(r.no_hp || ''),
-          no_wa: String(r.no_wa || r.no_hp || ''),
-          alamat: r.alamat || '',
-          kelurahan: r.kelurahan || '',
-          kecamatan: r.kecamatan || '',
-          kota: r.kota || '',
-          kode_pos: String(r.kode_pos || ''),
-          ring_area: r.ring_area || 'Ring 1',
-          tipe_kendaraan: r.tipe_kendaraan || '',
-          vin: String(r.vin || '').toUpperCase().trim(),
-          no_mesin: r.no_mesin || '',
-          no_polisi: String(r.no_polisi || '').toUpperCase().trim(),
-          tahun_rakit: Number(r.tahun_rakit) || new Date().getFullYear(),
-          tanggal_do: normalizeDateToISO(r.tanggal_do),
-          point_of_service: r.point_of_service || 'Bengkel Resmi',
-          problem_definition: r.problem_definition || 'Service Berkala',
-          estimasi_harga: Number(r.estimasi_harga) || 0,
-          no_voucher: r.no_voucher || '-',
-          km_service: Number(r.km_service) || 0,
-          jenis_pekerjaan: r.jenis_pekerjaan || 'Service Berkala',
-          tipe_promo: r.tipe_promo || '-',
-          ssc: r.ssc || 'Tidak',
-          dealer_penjual: r.dealer_penjual || 'Setiajaya Depok',
-          group: r.group || 'Setiajaya Group',
-          area_dealer: r.area_dealer || 'Jabodetabek',
-          t_Care: r.t_Care || 'Aktif',
-          up_selling: r.up_selling || '-',
-          cross_selling: r.cross_selling || '-',
-          no_so: r.no_so || `SO-${idx}`,
-          tanggal_so: normalizeDateToISO(r.tanggal_so),
-          no_invoice: r.no_invoice || `INV-${idx}`,
-          tanggal_invoice: normalizeDateToISO(r.tanggal_invoice),
-          next_service: normalizeDateToISO(r.next_service),
-          so_key: r.so_key || `SOKEY-${idx}`,
-          invoice_key: r.invoice_key || `INVKEY-${idx}`,
-          alamat_domisili: r.alamat_domisili || r.alamat || '',
-          ring_area_domisili: r.ring_area_domisili || r.ring_area || 'Ring 1',
-          nama_laporan: r.nama_laporan || 'Laporan Service Harian',
-          periode: r.periode || new Date().toISOString().slice(0, 7)
-        }));
+        mergeServiceCallRecords(gasRes.data);
       }
     }
 
@@ -599,6 +679,7 @@ async function startServer() {
     }
 
     serviceCallDatabase.unshift(newRecord);
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Data Service Call berhasil ditambahkan', data: newRecord });
   });
 
@@ -620,6 +701,7 @@ async function startServer() {
       await callGAS('saveServiceCall', { data: serviceCallDatabase[index] }, 'POST');
     }
 
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Data Service Call berhasil diperbarui', data: serviceCallDatabase[index] });
   });
 
@@ -637,6 +719,7 @@ async function startServer() {
     }
 
     serviceCallDatabase = serviceCallDatabase.filter(r => r.id !== id && r.no_invoice !== id);
+    saveDatabaseToFile();
     res.json({ success: true, message: 'Data Service Call berhasil dihapus' });
   });
 
@@ -763,6 +846,7 @@ async function startServer() {
       result.success++;
     });
 
+    saveDatabaseToFile();
     res.json({ success: true, summary: result });
     } catch (err: any) {
       console.error('[Batch Import Service Call Server Error]:', err);
@@ -778,70 +862,10 @@ async function startServer() {
     if (gasConfig.isLive && gasConfig.webAppUrl) {
       const gasRes = await callGAS('getDashboard', {}, 'GET');
       if (gasRes && gasRes.decData && Array.isArray(gasRes.decData)) {
-        decDatabase = gasRes.decData.map((r: any, idx: number) => ({
-          id: r.id || r.vin || `dec-gas-${idx}`,
-          bulan: r.bulan || 'Januari',
-          tanggal_dec: normalizeDateToISO(r.tanggal_dec),
-          nama_customer: r.nama_customer || '',
-          payment: r.payment || 'Cash',
-          phone_customer: String(r.phone_customer || ''),
-          model: r.model || '',
-          vin: String(r.vin || '').toUpperCase().trim(),
-          sales: r.sales || '',
-          alamat: r.alamat || '',
-          kota: r.kota || ''
-        }));
+        mergeDecRecords(gasRes.decData);
       }
       if (gasRes && gasRes.serviceCallData && Array.isArray(gasRes.serviceCallData)) {
-        serviceCallDatabase = gasRes.serviceCallData.map((r: any, idx: number) => ({
-          id: r.id || r.no_invoice || `sc-gas-${idx}`,
-          week: r.week || 'W1',
-          cabang: r.cabang || 'Toyota Setiajaya Depok',
-          service_advisor: r.service_advisor || 'Unassigned',
-          tanggal_entry: normalizeDateToISO(r.tanggal_entry),
-          call_id: r.call_id || `CALL-${idx}`,
-          kode_customer: r.kode_customer || 'CUST',
-          nama_customer: r.nama_customer || '',
-          no_hp: String(r.no_hp || ''),
-          no_wa: String(r.no_wa || r.no_hp || ''),
-          alamat: r.alamat || '',
-          kelurahan: r.kelurahan || '',
-          kecamatan: r.kecamatan || '',
-          kota: r.kota || '',
-          kode_pos: String(r.kode_pos || ''),
-          ring_area: r.ring_area || 'Ring 1',
-          tipe_kendaraan: r.tipe_kendaraan || '',
-          vin: String(r.vin || '').toUpperCase().trim(),
-          no_mesin: r.no_mesin || '',
-          no_polisi: String(r.no_polisi || '').toUpperCase().trim(),
-          tahun_rakit: Number(r.tahun_rakit) || new Date().getFullYear(),
-          tanggal_do: normalizeDateToISO(r.tanggal_do),
-          point_of_service: r.point_of_service || 'Bengkel Resmi',
-          problem_definition: r.problem_definition || 'Service Berkala',
-          estimasi_harga: Number(r.estimasi_harga) || 0,
-          no_voucher: r.no_voucher || '-',
-          km_service: Number(r.km_service) || 0,
-          jenis_pekerjaan: r.jenis_pekerjaan || 'Service Berkala',
-          tipe_promo: r.tipe_promo || '-',
-          ssc: r.ssc || 'Tidak',
-          dealer_penjual: r.dealer_penjual || 'Setiajaya Depok',
-          group: r.group || 'Setiajaya Group',
-          area_dealer: r.area_dealer || 'Jabodetabek',
-          t_Care: r.t_Care || 'Aktif',
-          up_selling: r.up_selling || '-',
-          cross_selling: r.cross_selling || '-',
-          no_so: r.no_so || `SO-${idx}`,
-          tanggal_so: normalizeDateToISO(r.tanggal_so),
-          no_invoice: r.no_invoice || `INV-${idx}`,
-          tanggal_invoice: normalizeDateToISO(r.tanggal_invoice),
-          next_service: normalizeDateToISO(r.next_service),
-          so_key: r.so_key || `SOKEY-${idx}`,
-          invoice_key: r.invoice_key || `INVKEY-${idx}`,
-          alamat_domisili: r.alamat_domisili || r.alamat || '',
-          ring_area_domisili: r.ring_area_domisili || r.ring_area || 'Ring 1',
-          nama_laporan: r.nama_laporan || 'Laporan Service Harian',
-          periode: r.periode || new Date().toISOString().slice(0, 7)
-        }));
+        mergeServiceCallRecords(gasRes.serviceCallData);
       }
     }
     const todayStr = new Date().toISOString().split('T')[0];
@@ -883,8 +907,36 @@ async function startServer() {
 
     // Trend Service (Harian, Mingguan, Bulanan dengan filter Bulan/Tahun)
     const trendFilter = (req.query.trend as string) || 'bulanan';
-    const selectedMonth = (req.query.month as string) || currentMonthStr; // e.g. "2026-07"
-    const selectedYear = (req.query.year as string) || currentMonthStr.slice(0, 4); // e.g. "2026"
+    let selectedMonth = (req.query.month as string) || currentMonthStr; // e.g. "2026-07"
+    let selectedYear = (req.query.year as string) || currentMonthStr.slice(0, 4); // e.g. "2026"
+
+    // If query parameters weren't explicitly supplied, check if the dataset has records in other years/months
+    if (serviceCallDatabase.length > 0) {
+      const availableYears = serviceCallDatabase
+        .map(s => normalizeDateToISO(s.tanggal_entry || s.tanggal_invoice).slice(0, 4))
+        .filter(y => /^\d{4}$/.test(y))
+        .sort((a, b) => b.localeCompare(a));
+
+      if (availableYears.length > 0 && !req.query.year) {
+        // If current year has no records, fallback to latest available year
+        const countInCurrentYear = serviceCallDatabase.filter(s => normalizeDateToISO(s.tanggal_entry || s.tanggal_invoice).startsWith(selectedYear)).length;
+        if (countInCurrentYear === 0) {
+          selectedYear = availableYears[0];
+        }
+      }
+
+      const availableMonths = serviceCallDatabase
+        .map(s => normalizeDateToISO(s.tanggal_entry || s.tanggal_invoice).slice(0, 7))
+        .filter(m => /^\d{4}-\d{2}$/.test(m))
+        .sort((a, b) => b.localeCompare(a));
+
+      if (availableMonths.length > 0 && !req.query.month) {
+        const countInCurrentMonth = serviceCallDatabase.filter(s => normalizeDateToISO(s.tanggal_entry || s.tanggal_invoice).startsWith(selectedMonth)).length;
+        if (countInCurrentMonth === 0) {
+          selectedMonth = availableMonths[0];
+        }
+      }
+    }
 
     const trendMap = new Map<string, number>();
 
@@ -1039,58 +1091,11 @@ async function startServer() {
     if (gasConfig.isLive && gasConfig.webAppUrl) {
       const gasResSC = await callGAS('getServiceCall', {}, 'GET');
       if (gasResSC && gasResSC.data && Array.isArray(gasResSC.data)) {
-        serviceCallDatabase = gasResSC.data.map((r: any, idx: number) => ({
-          id: r.id || r.no_invoice || `sc-gas-${idx}`,
-          week: r.week || 'W1',
-          cabang: r.cabang || 'Toyota Setiajaya Depok',
-          service_advisor: r.service_advisor || 'Unassigned',
-          tanggal_entry: normalizeDateToISO(r.tanggal_entry),
-          call_id: r.call_id || `CALL-${idx}`,
-          kode_customer: r.kode_customer || 'CUST',
-          nama_customer: r.nama_customer || '',
-          no_hp: String(r.no_hp || ''),
-          no_wa: String(r.no_wa || r.no_hp || ''),
-          alamat: r.alamat || '',
-          kelurahan: r.kelurahan || '',
-          kecamatan: r.kecamatan || '',
-          kota: r.kota || '',
-          kode_pos: String(r.kode_pos || ''),
-          ring_area: r.ring_area || 'Ring 1',
-          tipe_kendaraan: r.tipe_kendaraan || '',
-          vin: String(r.vin || '').toUpperCase().trim(),
-          no_mesin: r.no_mesin || '',
-          no_polisi: String(r.no_polisi || '').toUpperCase().trim(),
-          tahun_rakit: Number(r.tahun_rakit) || new Date().getFullYear(),
-          tanggal_do: normalizeDateToISO(r.tanggal_do),
-          point_of_service: r.point_of_service || 'Bengkel Resmi',
-          problem_definition: r.problem_definition || 'Service Berkala',
-          estimasi_harga: Number(r.estimasi_harga) || 0,
-          no_voucher: r.no_voucher || '-',
-          km_service: Number(r.km_service) || 0,
-          jenis_pekerjaan: r.jenis_pekerjaan || 'Service Berkala',
-          tipe_promo: r.tipe_promo || '-',
-          ssc: r.ssc || 'Tidak',
-          dealer_penjual: r.dealer_penjual || 'Setiajaya Depok',
-          group: r.group || 'Setiajaya Group',
-          area_dealer: r.area_dealer || 'Jabodetabek',
-          t_Care: r.t_Care || 'Aktif',
-          up_selling: r.up_selling || '-',
-          cross_selling: r.cross_selling || '-',
-          no_so: r.no_so || `SO-${idx}`,
-          tanggal_so: normalizeDateToISO(r.tanggal_so),
-          no_invoice: r.no_invoice || `INV-${idx}`,
-          tanggal_invoice: normalizeDateToISO(r.tanggal_invoice),
-          next_service: normalizeDateToISO(r.next_service),
-          so_key: r.so_key || `SOKEY-${idx}`,
-          invoice_key: r.invoice_key || `INVKEY-${idx}`,
-          alamat_domisili: r.alamat_domisili || r.alamat || '',
-          ring_area_domisili: r.ring_area_domisili || r.ring_area || 'Ring 1',
-          nama_laporan: r.nama_laporan || 'Laporan Service Harian',
-        }));
+        mergeServiceCallRecords(gasResSC.data);
       }
       const gasResDEC = await callGAS('getDEC', {}, 'GET');
       if (gasResDEC && gasResDEC.data && Array.isArray(gasResDEC.data)) {
-        decDatabase = gasResDEC.data;
+        mergeDecRecords(gasResDEC.data);
       }
     }
 
