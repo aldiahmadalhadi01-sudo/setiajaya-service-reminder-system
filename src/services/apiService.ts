@@ -10,6 +10,9 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     if (!contentType.includes('application/json')) {
       const text = await res.text();
       console.warn(`[API] Expected JSON from ${url}, got:`, text.slice(0, 100));
+      if (res.status === 404 || text.toLowerCase().includes('doctype')) {
+        throw new Error(`API Server /api tidak merespons (HTTP ${res.status}). Pastikan file vercel.json dan /api/index.ts terdaftar di repository Vercel Anda.`);
+      }
       throw new Error(`Server API response was not JSON (HTTP ${res.status})`);
     }
 
