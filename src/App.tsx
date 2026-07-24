@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import { Sidebar, ActiveTab } from './components/common/Sidebar';
 import { Header } from './components/common/Header';
-import { GasSettingsModal } from './components/common/GasSettingsModal';
 import { KPICards } from './components/dashboard/KPICards';
 import { TrendServiceChart } from './components/dashboard/TrendServiceChart';
 import { DealerDistributionChart } from './components/dashboard/DealerDistributionChart';
@@ -256,7 +255,6 @@ export default function App() {
         <Header
           activeTabTitle={getTabTitle()}
           config={gasConfig}
-          onOpenSettings={() => setIsGasSettingsOpen(true)}
           onRefreshData={refreshAllData}
           isRefreshing={isRefreshing}
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -354,18 +352,7 @@ export default function App() {
       </div>
 
       {/* SYSTEM MODALS */}
-      {/* 1. Apps Script Settings Modal */}
-      <GasSettingsModal
-        isOpen={isGasSettingsOpen}
-        onClose={() => setIsGasSettingsOpen(false)}
-        config={gasConfig}
-        onSaveConfig={(newConfig) => {
-          setGasConfig(newConfig);
-          refreshAllData();
-        }}
-      />
-
-      {/* 2. DEC Form Modal */}
+      {/* 1. DEC Form Modal */}
       <DECFormModal
         isOpen={isDECFormOpen}
         onClose={() => setIsDECFormOpen(false)}

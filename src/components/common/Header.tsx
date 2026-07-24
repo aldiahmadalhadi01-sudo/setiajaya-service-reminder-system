@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, RefreshCw, CheckCircle2, AlertTriangle, Settings, Building2, Menu } from 'lucide-react';
+import { Calendar, RefreshCw, CheckCircle2, Building2, Menu } from 'lucide-react';
 import { formatDateIndonesian } from '../../lib/dateUtils';
 import { GasConfig } from '../../types';
 
 interface HeaderProps {
   activeTabTitle: string;
   config: GasConfig;
-  onOpenSettings: () => void;
   onRefreshData: () => void;
   isRefreshing?: boolean;
   onToggleMobileMenu?: () => void;
@@ -15,7 +14,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   activeTabTitle,
   config,
-  onOpenSettings,
   onRefreshData,
   isRefreshing = false,
   onToggleMobileMenu
@@ -54,29 +52,11 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Action Controls & Indicators */}
       <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-        {/* Live / Demo Mode Indicator */}
-        <div
-          onClick={onOpenSettings}
-          className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-semibold cursor-pointer border transition-all ${
-            config.isLive && config.webAppUrl
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-              : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-          }`}
-          title="Klik untuk konfigurasi Google Apps Script Web App"
-        >
-          {config.isLive && config.webAppUrl ? (
-            <>
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="hidden lg:inline">Google Spreadsheet Live Connected</span>
-              <span className="lg:hidden">GAS Live</span>
-            </>
-          ) : (
-            <>
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span className="hidden lg:inline">Demo Mode (Reactive Database)</span>
-              <span className="lg:hidden">Demo Mode</span>
-            </>
-          )}
+        {/* Live Spreadsheet Badge */}
+        <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3 rounded-full text-[11px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="hidden lg:inline">Google Spreadsheet Terhubung</span>
+          <span className="lg:hidden">Live Synced</span>
         </div>
 
         {/* Date Display */}
@@ -94,15 +74,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <RefreshCw className={`w-4 h-4 text-slate-600 ${isRefreshing ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">Refresh</span>
-        </button>
-
-        {/* Settings Button */}
-        <button
-          onClick={onOpenSettings}
-          className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-          title="Pengaturan Google Apps Script"
-        >
-          <Settings className="w-4 h-4" />
         </button>
       </div>
     </header>

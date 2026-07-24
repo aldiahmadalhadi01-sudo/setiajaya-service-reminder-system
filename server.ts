@@ -10,21 +10,135 @@ import { normalizeDateToISO } from './src/lib/dateUtils';
 let decDatabase: DECRecord[] = [...INITIAL_DEC_RECORDS];
 let serviceCallDatabase: ServiceCallRecord[] = [...INITIAL_SERVICE_CALL_RECORDS];
 
-// User Config State for Google Apps Script Web App URL
+// User Config State for Google Spreadsheet Link
+const DEFAULT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1TAryGER_qTCumZ0xza-WGm3StAQSTepK5SlXOItz8ZU/edit?usp=drive_link';
+
 let gasConfig = {
-  webAppUrl: process.env.GAS_WEB_APP_URL || '',
+  webAppUrl: process.env.GAS_WEB_APP_URL || DEFAULT_SPREADSHEET_URL,
   apiKey: process.env.GAS_API_KEY || 'TOYOTA_SETIAJAYA_SECRET_KEY',
-  isLive: !!process.env.GAS_WEB_APP_URL
+  isLive: true
 };
 
 /**
- * Helper to call Google Apps Script Web App Endpoint
+ * Helper to parse CSV data from a string
+ */
+function parseCSV(csvText: string): Record<string, any>[] {
+  const lines: string[] = [];
+  let currentLine = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      currentLine += char;
+    } else if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (currentLine.trim()) {
+        lines.push(currentLine);
+      }
+      currentLine = '';
+      if (char === '\r' && csvText[i + 1] === '\n') {
+        i++;
+      }
+    } else {
+      currentLine += char;
+    }
+  }
+  if (currentLine.trim()) lines.push(currentLine);
+
+  if (lines.length < 2) return [];
+
+  const parseRow = (line: string): string[] => {
+    const cells: string[] = [];
+    let cell = '';
+    let inside = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inside && line[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inside = !inside;
+        }
+      } else if (c === ',' && !inside) {
+        cells.push(cell.trim());
+        cell = '';
+      } else {
+        cell += c;
+      }
+    }
+    cells.push(cell.trim());
+    return cells;
+  };
+
+  const rawHeaders = parseRow(lines[0]);
+  const headers = rawHeaders.map(h =>
+    h.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+|_+$/g, '')
+  );
+
+  const results: Record<string, any>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseRow(lines[i]);
+    if (values.every(v => !v)) continue;
+    const obj: Record<string, any> = {};
+    headers.forEach((h, colIdx) => {
+      obj[h] = values[colIdx] !== undefined ? values[colIdx] : '';
+    });
+    results.push(obj);
+  }
+
+  return results;
+}
+
+/**
+ * Helper to call Google Apps Script Web App Endpoint OR fetch Google Sheet CSV Link directly
  */
 async function callGAS(action: string, payload: any = {}, method: 'GET' | 'POST' = 'GET') {
   if (!gasConfig.isLive || !gasConfig.webAppUrl) return null;
 
   try {
-    const url = new URL(gasConfig.webAppUrl);
+    const rawUrl = gasConfig.webAppUrl.trim();
+
+    // Check if user provided a direct Google Sheet URL (docs.google.com/spreadsheets/d/ID/...)
+    const sheetIdMatch = rawUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (sheetIdMatch) {
+      const sheetId = sheetIdMatch[1];
+      if (action === 'getDEC' || action === 'getDashboard') {
+        const decUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=DEC`;
+        const resDEC = await fetch(decUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (resDEC.ok) {
+          const csvDEC = await resDEC.text();
+          const decRecords = parseCSV(csvDEC);
+          if (action === 'getDEC') {
+            return { success: true, count: decRecords.length, data: decRecords };
+          }
+          // If dashboard action, also fetch SERVICE_CALL
+          const scUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=SERVICE_CALL`;
+          const resSC = await fetch(scUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const scRecords = resSC.ok ? parseCSV(await resSC.text()) : [];
+          return {
+            success: true,
+            totalDEC: decRecords.length,
+            totalServiceCall: scRecords.length,
+            decData: decRecords,
+            serviceCallData: scRecords
+          };
+        }
+      } else if (action === 'getServiceCall') {
+        const scUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=SERVICE_CALL`;
+        const resSC = await fetch(scUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (resSC.ok) {
+          const csvSC = await resSC.text();
+          const scRecords = parseCSV(csvSC);
+          return { success: true, count: scRecords.length, data: scRecords };
+        }
+      }
+      return null;
+    }
+
+    // Standard Google Apps Script Web App (script.google.com)
+    const url = new URL(rawUrl);
     if (method === 'GET') {
       url.searchParams.set('action', action);
       if (payload) {
@@ -107,12 +221,34 @@ async function startServer() {
   app.post('/api/config/test', async (req: Request, res: Response) => {
     const { webAppUrl } = req.body;
     if (!webAppUrl || typeof webAppUrl !== 'string') {
-      res.status(400).json({ success: false, message: 'URL Web App tidak boleh kosong' });
+      res.status(400).json({ success: false, message: 'URL Google Sheet atau Web App tidak boleh kosong' });
       return;
     }
 
     try {
-      const url = new URL(webAppUrl.trim());
+      const rawUrl = webAppUrl.trim();
+      const sheetIdMatch = rawUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+
+      if (sheetIdMatch) {
+        const sheetId = sheetIdMatch[1];
+        const decUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=DEC`;
+        const testRes = await fetch(decUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (testRes.ok) {
+          res.json({
+            success: true,
+            message: 'Koneksi Google Sheet Berhasil! Data dapat dibaca secara otomatis.'
+          });
+          return;
+        } else {
+          res.status(400).json({
+            success: false,
+            message: 'Gagal membaca Google Sheet. Pastikan akses Google Sheet diatur ke "Siapa saja yang memiliki link" (Anyone with link).'
+          });
+          return;
+        }
+      }
+
+      const url = new URL(rawUrl);
       url.searchParams.set('action', 'getDashboard');
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -138,7 +274,7 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({
         success: false,
-        message: `Gagal terhubung: ${err.message || 'Network error'}. Pastikan URL benar & 'Who has access' diset 'Anyone'.`
+        message: `Gagal terhubung: ${err.message || 'Network error'}. Pastikan URL Google Sheet atau Web App benar.`
       });
     }
   });

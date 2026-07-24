@@ -68,12 +68,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Input Service Call',
       icon: Wrench,
       badge: null
-    },
-    {
-      id: 'settings' as ActiveTab,
-      label: 'Google Apps Script',
-      icon: Settings,
-      badge: null
     }
   ];
 

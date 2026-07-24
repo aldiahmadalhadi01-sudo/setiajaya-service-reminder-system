@@ -368,10 +368,10 @@ function getDashboardAnalytics(spreadsheet) {
             </div>
           </div>
 
-          {/* Web App URL Input */}
+          {/* Web App URL / Google Sheet Link Input */}
           <div className="space-y-2">
             <label className="text-sm font-bold text-slate-900 flex items-center justify-between">
-              <span>Google Apps Script Web App URL</span>
+              <span>Link Google Sheet / Web App URL</span>
               <span className="text-xs text-red-600 font-normal">*Diperlukan untuk Live Mode</span>
             </label>
 
@@ -382,7 +382,7 @@ function getDashboardAnalytics(spreadsheet) {
                   type="url"
                   value={webAppUrl}
                   onChange={(e) => setWebAppUrl(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/.../exec"
+                  placeholder="Paste Link Google Sheet (https://docs.google.com/spreadsheets/d/...) atau Web App URL"
                   className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none font-mono"
                 />
               </div>
@@ -396,6 +396,9 @@ function getDashboardAnalytics(spreadsheet) {
                 {isTesting ? 'Menguji...' : 'Uji Koneksi'}
               </button>
             </div>
+            <p className="text-[11px] text-slate-500 italic mt-1">
+              Bisa langsung memasukkan <strong>Link Google Spreadsheet</strong> (Akses: "Siapa saja yang memiliki link") atau <strong>Web App URL Apps Script</strong>.
+            </p>
           </div>
 
           {/* Template Download Section */}
